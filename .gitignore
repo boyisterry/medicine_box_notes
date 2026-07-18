@@ -1,0 +1,45 @@
+# ===== macOS =====
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+Icon?
+.Spotlight-V100
+.Trashes
+
+# ===== Xcode =====
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ===== Swift Package Manager =====
+.build/
+.swiftpm/
+Package.resolved
+
+# ===== CocoaPods (uncomment if used) =====
+# Pods/
+
+# ===== Carthage (uncomment if used) =====
+# Carthage/Build/
+
+# ===== fastlane (uncomment if used) =====
+# fastlane/report.xml
+# fastlane/Preview.html
+# fastlane/screenshots/**/*.png
+# fastlane/test_output
+
+# ===== Editors & misc =====
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
