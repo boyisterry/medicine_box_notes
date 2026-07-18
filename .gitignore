@@ -52,3 +52,10 @@ dist/*.apk
 dist/*.idsig
 models/**/*.litertlm
 models/**/*.litertlm.part
+
+# Demo editing intermediates (keep only the final short walkthrough)
+demo/MedicineBoxNotes-demo-90s.mp4
+demo/MedicineBoxNotes-full-demo.mp4
+demo/highlight-filter.txt
+demo/qa/
+demo/segments/
