@@ -1,106 +1,54 @@
-# MedicineBoxNotes · Family Medicine Cabinet & Medical Records
+# MedicineBoxNotes Android
 
-> An iOS health-tracking app for the home that brings every family member's **medical records / prescriptions / test attachments / home medicines** into one place.
-> **Offline-first, locally traceable, and assisted by on-device AI** — both your data and the AI stay on your device.
+A native, offline-first Android app for family medical records, prescriptions, medicine inventory, medication check-ins, follow-up reminders, OCR, and grounded on-device AI.
 
-[中文](./README.zh-CN.md) | **English**
+[中文](./README.zh-CN.md) | **English** · [Product and technical specification](./doc/方案设计文档.md)
 
-📖 Full product & technical spec (in Chinese): [`doc/方案设计文档.md`](./doc/方案设计文档.md)
+## Why MedicineBoxNotes
 
----
+Home healthcare is still oddly analogue. Medical records live on loose sheets of paper, scattered across hospitals, clinics, and drawers; the family medicine cabinet is a black box; and the people who need care most are the ones most likely to forget a dose. MedicineBoxNotes was built to fix four everyday frictions:
 
-## The Problems It Solves
+- **Scattered records.** Paper medical records are easy to lose and even harder to piece together — one family member's history may be spread across several hospitals and never gathered in one place.
+- **Forgotten inventory.** You buy a medicine, only to discover an unopened box of the same one at the back of a shelf. A clear view of what you actually keep at home prevents duplicate purchases.
+- **Expired medicine.** Without a list it's hard to know what has quietly passed its expiry date. The app tracks shelf life and warns you in time.
+- **Missed doses.** Chronic medication only works if it's taken on time. Reliable reminders keep daily medication on schedule.
 
-| Pain point | How the app handles it |
-|---|---|
-| Medical info is scattered across paper slips and chat logs; nothing is findable at follow-up visits | Digitize every document with the camera → automatic OCR + AI structuring → archive per family member, with full-text search |
-| Can't answer the doctor's "what have you taken / been treated for before" | Records sorted newest-first and grouped by year, searchable attachments, prescriptions traceable to the medicine cabinet |
-| Home medicines run out or expire unnoticed | Cabinet stock management + low-stock alerts (≤5) + medication plans that drive today's to-do |
-| Forgetting follow-up appointments | After a follow-up date is set, local notifications fire **the day before 9:00 AM + the day of 9:00 AM**, deep-linking into the record |
-| "What did my daughter take for her cough last year?" means manual digging | The bottom "Query" tab: local retrieval recall + on-device Gemma generating answers **with cited sources** |
-| Health privacy is too sensitive for cloud AI | Local storage by default; AI inference runs **entirely on-device**; the only network call (DuckDuckGo) sends just the user's question — never any records/medicine data |
-| AI hallucinates, which is dangerous in healthcare | End-to-end anti-hallucination: hard prompt rules + all-optional JSON + "none / don't know" normalization + query safety gate + risk acknowledgement + "to be verified" marking |
+The medicine box becomes a single, calm place to see how much backup medicine you have on hand, read each drug's instructions and leaflet, and get a dependable nudge when it's time to take it.
 
----
+Because medical records and prescriptions are deeply personal, the app never uploads them to the cloud to be answered. Instead it runs a local large language model on-device for natural-language Q&A — you keep full ownership of your private data while still getting fast, conversational answers grounded in your own records.
 
-## Core Features
+## Implementation
 
-- **Three core assets**: Medical records (`MedicalRecord`), home medicine cabinet (`MedicineItem`), family members (`FamilyMember`), plus the derived medication log (`MedicationLog`).
-- **Input pipeline**: photo → Vision OCR → on-device AI structuring → user confirmation → saved.
-- **Usage pipeline**: today's to-do / follow-up reminders / low stock / natural-language local Q&A on the home screen.
-- **5-tab layout**: Home / Records / Cabinet / Query / Settings (native SwiftUI, iOS 17+).
+- Five functional tabs: Home, Records, Medicine Box, Query, and Settings.
+- English by default, with persistent in-app switching for Simplified Chinese, Japanese, French, German, Spanish, and Korean.
+- Full Room-backed CRUD for family members, records, attachments, prescriptions, medicines, medication logs, and scan assets.
+- CameraX, Photo Picker, private image storage, and bundled Chinese/Latin ML Kit OCR.
+- Follow-up alarms, daily medication tasks, low-stock warnings, A4 PDF export, and AES-256-GCM encrypted backups.
+- Always-available rule engine plus optional arm64 LiteRT-LM/Gemma inference with resumable model download, GPU-to-CPU fallback, streaming, cancellation, citations, and safety gates.
+- Warm paper-inspired Compose design system derived from the supplied iOS assets and design tokens.
 
----
+## Stack
 
-## Tech Stack
-
-| Layer | Choice |
-|---|---|
-| Platform / language | iOS 17+ / Swift 5 |
-| UI | SwiftUI (custom floating TabBar, paper-feel card system) |
-| Data | SwiftData (`@Model`), CloudKit-compatible for sync |
-| OCR | Apple Vision (`VNRecognizeTextRequest`, Chinese + English) |
-| On-device model | Gemma 4 E2B (`.litertlm`, ~2.58 GB) + LiteRT-LM, bridged via `GemmaLiteRtBridge.xcframework` |
-| Web search | DuckDuckGo Instant Answer API (manual opt-in on the Query tab, 5s timeout, question only) |
-| Model delivery | Runtime download (Hugging Face / HF-Mirror, resumable) |
-
----
-
-## Design Principles
-
-1. **Offline-first, locally traceable** — sensitive health data stays on-device by default; AI inference runs locally; networking is optional and minimal.
-2. **AI is a constrained organizer, not a free-reasoning assistant** — it only summarizes / extracts / organizes / retrieves / answers; it never diagnoses, prescribes, or invents.
-3. **Results must be verifiable** — original images and OCR text are always retained; AI output is marked "to be verified"; answers come with cited sources.
-
-Anti-hallucination is the most technically substantive part of the project (three layers: hard prompt rules → output validation & normalization → query safety gate). See [Section 4](./doc/方案设计文档.md) of the spec.
-
----
-
-## Project Structure
+Kotlin 2.2, JDK 17, Android Gradle Plugin 8.13, Jetpack Compose, Material 3, Room, CameraX, ML Kit, and LiteRT-LM. Minimum API 26; compile and target API 36.
 
 ```text
-medicine_box_notes/
-├── MedicineBoxNotes.xcodeproj/
-├── Frameworks/
-│   └── GemmaLiteRtBridge.xcframework          # LiteRT-LM ObjC++ bridge (arm64 device + simulator)
-├── MedicineBoxNotes/
-│   ├── MedicineBoxNotesApp.swift               # Entry + all SwiftData models + main pages + inline services
-│   ├── MedicalAI*.swift                        # On-device AI abstraction (facade / prompts / state / models)
-│   ├── GemmaEngine.swift                       # On-device inference actor engine
-│   ├── Services/                               # Model download / AI config / web search / today's plan / image preprocessing
-│   ├── Views/                                  # HomeView + Settings subpages
-│   ├── Components/                             # 15 paper-feel components
-│   └── Theme/                                  # Design tokens (color / font / metrics / member palette)
-├── medicine_box_design/                        # Design prototypes (steady + bold variants)
-└── doc/
-    └── 方案设计文档.md                          # ← Full spec (in Chinese; source of truth)
+app/                UI, navigation, camera, reminders, PDF, backup, model download
+core-model/         Domain models and medication/stock rules
+core-database/      Room entities, DAOs, transactions, repository
+core-designsystem/  Design tokens and reusable Compose components
+core-ai/            OCR, rule-based AI, and Gemma LiteRT-LM client
+doc/                Product specification and supplied visual assets
 ```
 
----
+## Build
 
-## Build & Run
+Configure Android SDK 36 in `local.properties`, then run:
 
-1. Open `MedicineBoxNotes.xcodeproj` in **Xcode**.
-2. Target **iOS 17+**, preferably an **arm64** device or Apple Silicon simulator (the on-device model ships an arm64 slice only).
-3. Before using AI features like "Query", download the Gemma 4 E2B model under **Settings → AI** (~2.58 GB, Wi-Fi recommended, ≥6 GB free space required).
-4. With no model present the app falls back to **rule-based** extraction (Vision OCR + regex) — it never becomes unusable due to a missing model.
+```bash
+./gradlew :app:assembleDebug
+./gradlew :core-model:test :core-ai:testDebugUnitTest :app:lintDebug :app:assembleRelease
+```
 
----
+On external macOS volumes the project redirects build outputs to `/private/tmp/medicine-box-notes-build` to avoid AppleDouble metadata issues. The release APK is unsigned until a private signing configuration is supplied.
 
-## Visual Style
-
-The app follows a **"paper medical notebook"** metaphor: warm beige paper background + white large-rounded cards + Songti serif headings + brick-red primary + low-saturation member color dots + purple AI accents + a floating glass TabBar. It deliberately avoids the cold "tech blue" to convey "family, care, verifiable." The full design system is in [Section 7](./doc/方案设计文档.md) of the spec.
-
----
-
-## Known Limitations
-
-- No dedicated test target.
-- `MedicineBoxNotesApp.swift` is still a single ~4,900-line file; modularization is ongoing.
-- CloudKit compatibility constraints: no `.unique` attributes, default `.nullify` relationships — deletions/changes require manual cascade cleanup.
-- Local and iCloud are two independent containers; switching the backend only switches the view and **does not migrate data**.
-- AI / OCR results may be incomplete — pages always keep original images and OCR text for verification.
-
----
-
-> This README is an overview. Field names, structures, and implementation details are governed by the **code** and the spec at [`doc/方案设计文档.md`](./doc/方案设计文档.md) (Chinese).
+Gemma is downloaded at runtime and is not bundled in the APK. Core local data and rule-based features remain available without a model or network connection.

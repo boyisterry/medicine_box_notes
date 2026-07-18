@@ -43,3 +43,12 @@ Package.resolved
 *~
 .vscode/
 .idea/
+.gradle/
+.gradle-user/
+.kotlin/
+**/build/
+local.properties
+dist/*.apk
+dist/*.idsig
+models/**/*.litertlm
+models/**/*.litertlm.part

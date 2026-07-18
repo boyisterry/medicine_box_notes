@@ -1,0 +1,9 @@
+<resources>
+    <style name="Theme.MedicineBoxNotes" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#B85C3A</item>
+        <item name="android:navigationBarColor">#FBF7F0</item>
+        <item name="android:statusBarColor">#FBF7F0</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>
