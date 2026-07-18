@@ -3,7 +3,7 @@
 > An iOS health-tracking app for the home that brings every family member's **medical records / prescriptions / test attachments / home medicines** into one place.
 > **Offline-first, locally traceable, and assisted by on-device AI** — both your data and the AI stay on your device.
 
-**中文** | [English](./README.md)
+[中文](./README.zh-CN.md) | **English**
 
 📖 Full product & technical spec (in Chinese): [`doc/方案设计文档.md`](./doc/方案设计文档.md)
 
