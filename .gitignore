@@ -55,6 +55,10 @@ models/**/*.litertlm.part
 signing/*.keystore
 signing/*.jks
 
+# Generated release-source staging trees (the verified ZIP may be committed).
+release/*-source/
+release/._*
+
 # Demo editing intermediates (keep only the final short walkthrough)
 demo/MedicineBoxNotes-demo-90s.mp4
 demo/MedicineBoxNotes-full-demo.mp4
