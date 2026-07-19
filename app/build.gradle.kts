@@ -19,7 +19,19 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
     buildFeatures { compose = true; buildConfig = true }
+    signingConfigs {
+        create("projectDebug") {
+            storeFile = rootProject.file("signing/medicine-box-notes-debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes {
+        debug {
+            val projectKey = rootProject.file("signing/medicine-box-notes-debug.keystore")
+            if (projectKey.isFile) signingConfig = signingConfigs.getByName("projectDebug")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
