@@ -95,8 +95,22 @@ class MedicineRepository(private val db: MedicineBoxDatabase) {
 
     suspend fun saveAttachment(value: RecordAttachment) = db.attachments().upsertAll(listOf(value.entity()))
     suspend fun saveScan(value: MedicineScanAsset) = db.medicineScans().upsertAll(listOf(value.entity()))
+    suspend fun scans(medicineId: String): List<MedicineScanAsset> =
+        db.medicineScans().getForMedicine(medicineId).map { it.model() }
     fun observeScans(medicineId: String): Flow<List<MedicineScanAsset>> =
         db.medicineScans().observeForMedicine(medicineId).map { rows -> rows.map { it.model() } }
+
+    suspend fun deleteScan(value: MedicineScanAsset): List<String> = db.withTransaction {
+        db.medicineScans().delete(value.entity())
+        val remainingOcr = db.medicineScans().getForMedicine(value.medicineId)
+            .map { it.ocrText.trim() }
+            .filter(String::isNotBlank)
+            .joinToString("\n")
+        db.medicines().get(value.medicineId)?.let { medicine ->
+            db.medicines().upsert(medicine.copy(aggregatedOcrText = remainingOcr))
+        }
+        listOfNotNull(value.imagePath, value.thumbnailPath)
+    }
 
     suspend fun syncPrescription(record: MedicalRecord, member: FamilyMember?, prescription: Prescription, addStock: Int = 0) = db.withTransaction {
         val current = db.medicines().byPrescription(prescription.id)?.model()

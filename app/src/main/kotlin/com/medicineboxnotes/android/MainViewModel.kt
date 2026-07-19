@@ -35,6 +35,16 @@ data class QueryUiState(
 )
 enum class MediaProcessStage { SAVING, RECOGNIZING, SAVED, ERROR }
 data class MediaProcessState(val stage: MediaProcessStage, val recognizedCharacters: Int = 0, val photoSaved: Boolean = false, val error: String? = null)
+enum class MedicineAiMode { OCR, VISION }
+enum class MedicineAiStage { RUNNING, COMPLETE, ERROR }
+data class MedicineAiProcessState(
+    val stage: MedicineAiStage,
+    val mode: MedicineAiMode,
+    val extraction: com.medicineboxnotes.ai.MedicineExtraction? = null,
+    val sourceText: String = "",
+    val error: String? = null,
+    val updatedAtEpochMillis: Long = System.currentTimeMillis(),
+)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as MedicineBoxApplication
@@ -49,6 +59,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val backupMessage = _backupMessage.asStateFlow()
     private val _mediaStates = MutableStateFlow<Map<String, MediaProcessState>>(emptyMap())
     val mediaStates = _mediaStates.asStateFlow()
+    private val _medicineAiStates = MutableStateFlow<Map<String, MedicineAiProcessState>>(emptyMap())
+    val medicineAiStates = _medicineAiStates.asStateFlow()
 
     private val _query = MutableStateFlow(QueryUiState())
     val query: StateFlow<QueryUiState> = _query.asStateFlow()
@@ -127,15 +139,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cleanupCapture(uri)
     }
 
-    fun organizeMedicine(medicine: MedicineItem) = viewModelScope.launch {
+    fun deleteMedicineScan(scan: MedicineScanAsset) = viewModelScope.launch {
+        val paths = repository.deleteScan(scan)
+        withContext(Dispatchers.IO) {
+            paths.forEach { path -> runCatching { getApplication<Application>().filesDir.resolve(path).delete() } }
+        }
+        _medicineAiStates.update { it - scan.medicineId }
+    }
+
+    fun organizeMedicine(medicine: MedicineItem, useVision: Boolean = false) = viewModelScope.launch {
         if (!_riskAcknowledged.value) { _backupMessage.value = "请先在查询页确认 AI 使用风险"; return@launch }
-        _backupMessage.value = "正在智能整理…"
-        _backupMessage.value = runCatching {
+        val mode = if (useVision) MedicineAiMode.VISION else MedicineAiMode.OCR
+        _medicineAiStates.update { it + (medicine.id to MedicineAiProcessState(MedicineAiStage.RUNNING, mode)) }
+        runCatching {
             val current = repository.medicine(medicine.id) ?: medicine
-            val result = ai.extractMedicine(current.aggregatedOcrText)
-            repository.saveMedicine(current.copy(name = result.name ?: current.name, dosage = result.dosage ?: current.dosage, frequency = result.frequency ?: current.frequency, durationDays = result.durationDays ?: current.durationDays, note = result.note ?: current.note, aiSummary = result.summary.orEmpty()))
-            "智能整理完成，请核对字段"
-        }.getOrElse { "智能整理失败：${it.message}" }
+            val scans = repository.scans(medicine.id)
+            val ocrText = scans.map { it.ocrText.trim() }.filter(String::isNotBlank).joinToString("\n")
+                .ifBlank { current.aggregatedOcrText }
+            val result = if (useVision) {
+                val paths = scans.map { getApplication<Application>().filesDir.resolve(it.imagePath).absolutePath }
+                ai.visionExtractMedicine(paths, ocrText)
+            } else ai.extractMedicine(ocrText)
+            repository.saveMedicine(current.copy(
+                name = result.name ?: current.name,
+                dosage = result.dosage ?: current.dosage,
+                frequency = result.frequency ?: current.frequency,
+                durationDays = result.durationDays ?: current.durationDays,
+                note = result.note ?: current.note,
+                aiSummary = result.summary ?: current.aiSummary,
+                aggregatedOcrText = ocrText,
+            ))
+            _medicineAiStates.update {
+                it + (medicine.id to MedicineAiProcessState(MedicineAiStage.COMPLETE, mode, result, ocrText))
+            }
+        }.onFailure { error ->
+            _medicineAiStates.update {
+                it + (medicine.id to MedicineAiProcessState(MedicineAiStage.ERROR, mode, error = error.message ?: "Unknown error"))
+            }
+        }
     }
 
     fun ask(question: String) {

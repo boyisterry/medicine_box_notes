@@ -484,18 +484,33 @@ fun MedicineEditorScreen(vm: MainViewModel, medicineId: String?, onBack: () -> U
 @Composable
 private fun MedicineEditorContent(vm: MainViewModel, initial: MedicineItem?, onBack: () -> Unit) {
     val draft = remember(initial?.id) { initial ?: MedicineItem(name = "") }
+    val liveMedicines by vm.medicines.collectAsState()
+    val liveMedicine = liveMedicines.firstOrNull { it.id == draft.id } ?: draft
     var name by remember { mutableStateOf(draft.name) }; var dosage by remember { mutableStateOf(draft.dosage) }
     var frequency by remember { mutableStateOf(draft.frequency) }; var stock by remember { mutableStateOf(draft.stock.toString()) }
     var duration by remember { mutableIntStateOf(draft.durationDays) }; var note by remember { mutableStateOf(draft.note) }
     var times by remember { mutableStateOf(draft.scheduledTimes.joinToString(",")) }; var active by remember { mutableStateOf(draft.isActive) }
-    fun currentMedicine() = draft.copy(name = name.trim(), dosage = dosage.trim(), frequency = frequency.trim(), durationDays = duration, note = note.trim(), stock = stock.toIntOrNull() ?: 0, scheduledTimes = times.split(',').map(String::trim).filter { Regex("\\d{2}:\\d{2}").matches(it) }, isActive = active)
+    fun currentMedicine() = liveMedicine.copy(name = name.trim(), dosage = dosage.trim(), frequency = frequency.trim(), durationDays = duration, note = note.trim(), stock = stock.toIntOrNull() ?: 0, scheduledTimes = times.split(',').map(String::trim).filter { Regex("\\d{2}:\\d{2}").matches(it) }, isActive = active)
     val scanPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> uri?.let { vm.addMedicineScan(currentMedicine(), it) } }
     var showCamera by remember { mutableStateOf(false) }
     val scansFlow = remember(draft.id) { vm.observeMedicineScans(draft.id) }
     val scans by scansFlow.collectAsState(initial = emptyList())
     val mediaStates by vm.mediaStates.collectAsState()
     val mediaState = mediaStates[draft.id]
+    val medicineAiStates by vm.medicineAiStates.collectAsState()
+    val medicineAiState = medicineAiStates[draft.id]
     val feedback by vm.backupMessage.collectAsState()
+    var scanTextToShow by remember { mutableStateOf<MedicineScanAsset?>(null) }
+    var scanToDelete by remember { mutableStateOf<MedicineScanAsset?>(null) }
+    LaunchedEffect(medicineAiState?.updatedAtEpochMillis) {
+        medicineAiState?.extraction?.let { result ->
+            result.name?.let { name = it }
+            result.dosage?.let { dosage = it }
+            result.frequency?.let { frequency = it }
+            result.durationDays?.let { duration = it }
+            result.note?.let { note = it }
+        }
+    }
     Scaffold(
         containerColor = MBColor.Paper,
         topBar = {
@@ -524,18 +539,19 @@ private fun MedicineEditorContent(vm: MainViewModel, initial: MedicineItem?, onB
                     EditorLineField(note, { note = it }, stringResource(R.string.advice), singleLine = false)
                 }
             }
-            if (draft.aiSummary.isNotBlank()) {
+            if (liveMedicine.aiSummary.isNotBlank()) {
                 item { Text(stringResource(R.string.model_summary), style = MaterialTheme.typography.titleLarge, color = MBColor.Ink3, fontWeight = FontWeight.SemiBold) }
-                item { PaperCard(Modifier.fillParentMaxWidth()) { Text(draft.aiSummary, style = MaterialTheme.typography.bodyLarge) } }
+                item { PaperCard(Modifier.fillParentMaxWidth()) { Text(liveMedicine.aiSummary, style = MaterialTheme.typography.bodyLarge) } }
             }
             item { Text(stringResource(R.string.smart_organize), style = MaterialTheme.typography.titleLarge, color = MBColor.Ink3, fontWeight = FontWeight.SemiBold) }
             item {
                 PaperCard(Modifier.fillParentMaxWidth()) {
-                    ActionRow(Icons.Rounded.AutoAwesome, stringResource(R.string.organize_ocr), enabled = draft.aggregatedOcrText.isNotBlank() || scans.any { it.ocrText.isNotBlank() }) { vm.organizeMedicine(currentMedicine()) }
+                    ActionRow(Icons.Rounded.AutoAwesome, stringResource(R.string.organize_ocr), enabled = liveMedicine.aggregatedOcrText.isNotBlank() || scans.any { it.ocrText.isNotBlank() }) { vm.organizeMedicine(currentMedicine()) }
                     HorizontalDivider(Modifier.padding(start = 42.dp), color = MBColor.Hairline)
-                    ActionRow(Icons.Rounded.Visibility, stringResource(R.string.vision_extract), enabled = scans.isNotEmpty()) { vm.organizeMedicine(currentMedicine()) }
+                    ActionRow(Icons.Rounded.Visibility, stringResource(R.string.vision_extract), enabled = scans.isNotEmpty()) { vm.organizeMedicine(currentMedicine(), useVision = true) }
                 }
             }
+            medicineAiState?.let { item { MedicineAiProcessNotice(it) } }
             item { Text(stringResource(R.string.scan_notice), color = MBColor.Ink3, style = MaterialTheme.typography.bodyMedium) }
             item {
                 PaperCard(Modifier.fillParentMaxWidth()) {
@@ -545,7 +561,18 @@ private fun MedicineEditorContent(vm: MainViewModel, initial: MedicineItem?, onB
                     if (scans.isNotEmpty()) {
                         HorizontalDivider(Modifier.padding(start = 42.dp), color = MBColor.Hairline)
                         Text("${stringResource(R.string.collected_images)} · ${scans.size}", modifier = Modifier.padding(vertical = 12.dp), style = MaterialTheme.typography.bodyLarge)
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { scans.take(5).forEach { StoredThumbnail(it.thumbnailPath ?: it.imagePath, Modifier.size(72.dp)) } }
+                        scans.forEachIndexed { index, scan ->
+                            if (index > 0) HorizontalDivider(Modifier.padding(vertical = 10.dp), color = MBColor.Hairline)
+                            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                StoredThumbnail(scan.thumbnailPath ?: scan.imagePath, Modifier.size(76.dp).clickable { scanTextToShow = scan })
+                                Column(Modifier.weight(1f)) {
+                                    Text(stringResource(R.string.ocr_text), color = MBColor.Ink3, style = MaterialTheme.typography.labelMedium)
+                                    Text(scan.ocrText.ifBlank { stringResource(R.string.no_ocr) }, style = MaterialTheme.typography.bodyMedium, maxLines = 4)
+                                    if (scan.ocrText.isNotBlank()) TextButton({ scanTextToShow = scan }, contentPadding = PaddingValues(0.dp)) { Text(stringResource(R.string.view_full_text)) }
+                                }
+                                IconButton({ scanToDelete = scan }) { Icon(Icons.Rounded.DeleteOutline, stringResource(R.string.delete_image), tint = MaterialTheme.colorScheme.error) }
+                            }
+                        }
                     }
                 }
             }
@@ -564,8 +591,65 @@ private fun MedicineEditorContent(vm: MainViewModel, initial: MedicineItem?, onB
         }
     }
     if (showCamera) CameraCaptureDialog({ showCamera = false }) { vm.addMedicineScan(currentMedicine(), it); showCamera = false }
+    scanTextToShow?.let { scan ->
+        AlertDialog(
+            onDismissRequest = { scanTextToShow = null },
+            confirmButton = { TextButton({ scanTextToShow = null }) { Text(stringResource(R.string.ok)) } },
+            title = { Text(stringResource(R.string.ocr_text)) },
+            text = { Text(scan.ocrText.ifBlank { stringResource(R.string.no_ocr) }, modifier = Modifier.verticalScroll(rememberScrollState())) },
+        )
+    }
+    scanToDelete?.let { scan ->
+        AlertDialog(
+            onDismissRequest = { scanToDelete = null },
+            confirmButton = { TextButton({ vm.deleteMedicineScan(scan); scanToDelete = null }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton({ scanToDelete = null }) { Text(stringResource(R.string.cancel)) } },
+            title = { Text(stringResource(R.string.delete_image)) },
+            text = { Text(stringResource(R.string.delete_image_confirm)) },
+        )
+    }
     feedback?.let { AlertDialog(onDismissRequest = vm::clearBackupMessage, confirmButton = { TextButton(vm::clearBackupMessage) { Text(stringResource(R.string.ok)) } }, text = { Text(it) }) }
 }
+
+@Composable
+private fun MedicineAiProcessNotice(state: MedicineAiProcessState) {
+    val running = state.stage == MedicineAiStage.RUNNING
+    val failed = state.stage == MedicineAiStage.ERROR
+    val background = when { failed -> MBColor.WarningSoft; running -> MBColor.AISoft; else -> MBColor.SuccessSoft }
+    val foreground = when { failed -> MBColor.Warning; running -> MBColor.AI; else -> MBColor.Success }
+    PaperCard(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = foreground)
+            else Icon(if (failed) Icons.Rounded.Error else Icons.Rounded.CheckCircle, null, tint = foreground)
+            Text(
+                stringResource(when (state.stage) {
+                    MedicineAiStage.RUNNING -> R.string.ai_extracting
+                    MedicineAiStage.COMPLETE -> R.string.ai_extract_complete
+                    MedicineAiStage.ERROR -> R.string.ai_extract_failed
+                }),
+                color = foreground, fontWeight = FontWeight.SemiBold,
+            )
+        }
+        state.extraction?.let { result ->
+            Spacer(Modifier.height(10.dp))
+            Surface(shape = RoundedCornerShape(14.dp), color = background) {
+                Text(result.visibleText().ifBlank { stringResource(R.string.no_extracted_fields) }, Modifier.fillMaxWidth().padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        state.error?.let { Text(it, color = foreground, style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+@Composable
+private fun com.medicineboxnotes.ai.MedicineExtraction.visibleText(): String = listOfNotNull(
+    name?.let { "${stringResource(R.string.medicine_name)}: $it" },
+    dosage?.let { "${stringResource(R.string.dosage)}: $it" },
+    frequency?.let { "${stringResource(R.string.frequency)}: $it" },
+    durationDays?.let { "${stringResource(R.string.duration)}: $it" },
+    note?.let { "${stringResource(R.string.advice)}: $it" },
+    summary?.let { "${stringResource(R.string.ai_summary)}: $it" },
+    warnings.takeIf { it.isNotEmpty() }?.joinToString("\n"),
+).joinToString("\n")
 
 @Composable
 private fun EditorLineField(value: String, change: (String) -> Unit, placeholder: String, singleLine: Boolean = true) {

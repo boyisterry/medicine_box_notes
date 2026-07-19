@@ -52,7 +52,17 @@ class GemmaMedicalAiClient(
     }.getOrElse { fallback.extractMedicine(ocrText) }
 
     override suspend fun visionExtractMedicine(imagePaths: List<String>, hintOcrText: String): MedicineExtraction =
-        extractMedicine(hintOcrText) // Gemma 4 image content support is isolated for a later model capability probe.
+        runCatching {
+            val validImages = imagePaths.map(::File).filter(File::isFile).take(4)
+            require(validImages.isNotEmpty()) { "没有可读取的药盒图片" }
+            val prompt = """直接查看随消息提供的药盒图片，并结合下方 OCR 提取药品信息。严格只输出一个 JSON 对象，键名和类型必须为：
+                |{"name":null,"dosage":null,"frequency":null,"durationDays":null,"note":null,"summary":null,"warnings":[]}
+                |无法从图片或 OCR 确认的字段保持 null，禁止猜测。OCR 参考：
+                |$hintOcrText
+            """.trimMargin()
+            val contents = Contents.of(listOf(Content.Text(prompt)) + validImages.map { Content.ImageFile(it.absolutePath) })
+            generateJson<MedicineExtraction>(Message.user(contents))
+        }.getOrElse { fallback.visionExtractMedicine(imagePaths, hintOcrText) }
 
     override suspend fun analyzeAttachment(ocrText: String, attachmentType: String): AttachmentAnalysis = runCatching {
         generateJson<AttachmentAnalysis>(
@@ -98,6 +108,15 @@ class GemmaMedicalAiClient(
         mutex.withLock {
             activeEngine.createConversation(ConversationConfig(systemInstruction = Contents.of(MedicalPrompting.systemRules))).use {
                 decode(it.sendMessage(prompt).textContent())
+            }
+        }
+    }
+
+    private suspend inline fun <reified T> generateJson(message: Message): T = withContext(inferenceDispatcher) {
+        val activeEngine = engine()
+        mutex.withLock {
+            activeEngine.createConversation(ConversationConfig(systemInstruction = Contents.of(MedicalPrompting.systemRules))).use {
+                decode(it.sendMessage(message).textContent())
             }
         }
     }

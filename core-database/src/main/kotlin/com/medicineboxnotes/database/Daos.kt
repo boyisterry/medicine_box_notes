@@ -74,6 +74,7 @@ interface MedicationLogDao {
 @Dao
 interface MedicineScanDao {
     @Query("SELECT * FROM medicine_scans WHERE medicineId=:medicineId ORDER BY rowid DESC") fun observeForMedicine(medicineId: String): Flow<List<MedicineScanEntity>>
+    @Query("SELECT * FROM medicine_scans WHERE medicineId=:medicineId ORDER BY rowid DESC") suspend fun getForMedicine(medicineId: String): List<MedicineScanEntity>
     @Query("SELECT * FROM medicine_scans") suspend fun getAll(): List<MedicineScanEntity>
     @Upsert suspend fun upsertAll(values: List<MedicineScanEntity>)
     @Delete suspend fun delete(value: MedicineScanEntity)
